@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>시간표 합치기</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        h1 {
+            text-align: center;
+        }
+        #friendList {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .friend-button {
+            margin: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: white;
+            border: 2px solid black;
+            border-radius: 5px;
+        }
+        .friend-button.selected {
+            background-color: green;
+            color: white;
+        }
+        #combineTimetable {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 18px;
+            cursor: pointer;
+            background-color: blue;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        table {
+            margin-top: 20px;
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid black;
+            text-align: center;
+            padding: 8px;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <h1>친구 목록</h1>
+    <div id="friendList">친구 목록을 불러오는 중...</div>
+    <button id="combineTimetable">시간표 합치기</button>
+    <div id="combinedTable"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const userId = localStorage.getItem('userId');
+            const friendListDiv = document.getElementById('friendList');
+            const combineButton = document.getElementById('combineTimetable');
+            const combinedTableDiv = document.getElementById('combinedTable');
+            const selectedFriends = new Set();
+
+            if (!userId) {
+                alert('로그인 정보가 없습니다. 로그인 페이지로 이동합니다.');
+                window.location.href = 'main.html';
+                return;
+            }
+
+            // 서버에서 친구 목록 가져오기
+            fetch('http://127.0.0.1:5001/get_friends', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: userId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                friendListDiv.innerHTML = ''; // 초기 텍스트 제거
+
+                if (data.status === 'success' && data.friends.length > 0) {
+                    data.friends.forEach(friend => {
+                        const button = document.createElement('button');
+                        button.textContent = `${friend.friend_name} (${friend.friend_id})`;
+                        button.classList.add('friend-button');
+                        button.dataset.friendId = friend.friend_id;
+                        button.dataset.friendName = friend.friend_name;
+
+                        button.addEventListener('click', () => {
+                            if (selectedFriends.has(friend.friend_id)) {
+                                selectedFriends.delete(friend.friend_id);
+                                button.classList.remove('selected');
+                            } else {
+                                selectedFriends.add(friend.friend_id);
+                                button.classList.add('selected');
+                                loadFriendTimetable(friend.friend_id, friend.friend_name);
+                            }
+                        });
+
+                        friendListDiv.appendChild(button);
+                    });
+                } else {
+                    friendListDiv.textContent = data.status === 'success'
+                        ? '친구 목록이 없습니다.'
+                        : '친구 목록을 불러오는 중 오류가 발생했습니다.';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                friendListDiv.textContent = '친구 목록을 불러오는 중 서버 오류가 발생했습니다.';
+            });
+
+            combineButton.addEventListener('click', () => {
+                if (selectedFriends.size === 0) {
+                    alert('시간표를 합치기 위해 친구를 선택하세요.');
+                    return;
+                }
+
+                const friendIds = Array.from(selectedFriends);
+                fetch('http://127.0.0.1:5001/combine_timetables', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: friendIds })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        displayCombinedTimetable(data.combined, friendIds);
+                    } else {
+                        alert('시간표 합치기에 실패했습니다.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('시간표 합치기 중 서버 오류가 발생했습니다.');
+                });
+            });
+
+            function loadFriendTimetable(friendId, friendName) {
+                const timetable = new Timetable(friendId, friendName);
+                timetable.fetchTimetable();
+            }
+
+            function displayCombinedTimetable(combinedTimetable, friendIds) {
+                combinedTableDiv.innerHTML = `
+                    <h2>합쳐진 시간표</h2>
+                    <p>선택된 친구: ${friendIds.join(', ')}</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>시간</th>
+                                <th>월요일</th>
+                                <th>화요일</th>
+                                <th>수요일</th>
+                                <th>목요일</th>
+                                <th>금요일</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${combinedTimetable.map(row => `
+                                <tr>
+                                    <td>${row.time}</td>
+                                    ${row.days.map(day => `<td>${day}</td>`).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
